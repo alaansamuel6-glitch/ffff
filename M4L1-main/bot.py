@@ -5,6 +5,7 @@ import schedule
 import threading 
 import time 
 from config import * 
+import os
 
 bot = TeleBot(API_TOKEN) 
 
@@ -32,7 +33,7 @@ def shedule_thread():
 def handle_start(message): 
     user_id = message.chat.id 
     if user_id in manager.get_users(): 
-        bot.reply_to(message, "Ты уже зарегестрирован!") 
+        bot.reply_to(message, "Ты уже зарегистрирован!") 
     else: 
         manager.add_user(user_id, message.from_user.username) 
         bot.reply_to(message, "Привет! Добро пожаловать! Тебя успешно зарегистрировали!") 
@@ -40,18 +41,43 @@ def handle_start(message):
 @bot.message_handler(commands=['rating']) 
 def handle_rating(message): 
     res = manager.get_rating() 
-    # Исправлено форматирование: x[0] - имя, x[1] - количество призов
     res = [f'| @{x[0]:<11} | {x[1]:<11}|\n{"_"*26}' for x in res] 
     res = '\n'.join(res) 
     res = f'|USER_NAME |COUNT_PRIZE|\n{"_"*26}\n' + res 
     bot.send_message(message.chat.id, res) 
+
+@bot.message_handler(commands=['get_my_score'])
+def handle_get_my_score(message):
+    user_id = message.chat.id
+    
+    info = manager.get_winners_img(user_id)
+    prizes = [x[0] for x in info]
+    
+    if not os.path.exists('img') or not os.listdir('img'):
+        bot.send_message(user_id, "В игре пока нет картинок!")
+        return
+
+    image_paths = os.listdir('img')
+    image_paths = [f'img/{x}' if x in prizes else f'hidden_img/{x}' for x in image_paths]
+    
+    collage = create_collage(image_paths)
+    
+    if collage is not None:
+        temp_path = f'collage_{user_id}.png'
+        cv2.imwrite(temp_path, collage)
+        
+        with open(temp_path, 'rb') as photo:
+            bot.send_photo(user_id, photo, caption="Вот твои достижения!")
+            
+        os.remove(temp_path)
+    else:
+        bot.send_message(user_id, "Не удалось создать коллаж.")
 
 @bot.callback_query_handler(func=lambda call: True) 
 def callback_query(call): 
     prize_id = call.data 
     user_id = call.message.chat.id 
     
-    # Исправлено: используем уже существующий метод get_winners_count
     if manager.get_winners_count(prize_id) < 3: 
         res = manager.add_winner(user_id, prize_id) 
         if res: 
@@ -73,3 +99,4 @@ if __name__ == '__main__':
     polling_shedule = threading.Thread(target=shedule_thread) 
     polling_thread.start() 
     polling_shedule.start()
+
